@@ -51,9 +51,10 @@ import java.util.List;
 public class VAInstrumentation extends Instrumentation implements Handler.Callback {
     public static final String TAG = Constants.TAG_PREFIX + "VAInstrumentation";
     public static final int LAUNCH_ACTIVITY         = 100;
+    public static final int EXECUTE_TRANSACTION     = 159;
 
     protected Instrumentation mBase;
-    
+
     protected final ArrayList<WeakReference<Activity>> mActivities = new ArrayList<>();
 
     protected PluginManager mPluginManager;
@@ -86,7 +87,7 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
         injectIntent(intent);
         return mBase.execStartActivity(who, contextThread, token, target, intent, requestCode, options);
     }
-    
+
     protected void injectIntent(Intent intent) {
         mPluginManager.getComponentsHandler().transformIntentToExplicitAsNeeded(intent);
         // null component is an implicitly intent
@@ -102,19 +103,19 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
         try {
             cl.loadClass(className);
             Log.i(TAG, String.format("newActivity[%s]", className));
-            
+
         } catch (ClassNotFoundException e) {
             ComponentName component = PluginUtil.getComponent(intent);
-            
+
             if (component == null) {
                 return newActivity(mBase.newActivity(cl, className, intent));
             }
-    
+
             String targetClassName = component.getClassName();
             Log.i(TAG, String.format("newActivity[%s : %s/%s]", className, component.getPackageName(), targetClassName));
-    
+
             LoadedPlugin plugin = this.mPluginManager.getLoadedPlugin(component);
-    
+
             if (plugin == null) {
                 // Not found then goto stub activity.
                 boolean debuggable = false;
@@ -122,29 +123,29 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
                     Context context = this.mPluginManager.getHostContext();
                     debuggable = (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
                 } catch (Throwable ex) {
-        
+
                 }
-    
+
                 if (debuggable) {
                     throw new ActivityNotFoundException("error intent: " + intent.toURI());
                 }
-                
+
                 Log.i(TAG, "Not found. starting the stub activity: " + StubActivity.class);
                 return newActivity(mBase.newActivity(cl, StubActivity.class.getName(), intent));
             }
-            
+
             Activity activity = mBase.newActivity(plugin.getClassLoader(), targetClassName, intent);
             activity.setIntent(intent);
-    
+
             // for 4.1+
             Reflector.QuietReflector.with(activity).field("mResources").set(plugin.getResources());
-    
+
             return newActivity(activity);
         }
 
         return newActivity(mBase.newActivity(cl, className, intent));
     }
-    
+
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         return mBase.newApplication(cl, className, context);
@@ -155,14 +156,14 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
         injectActivity(activity);
         mBase.callActivityOnCreate(activity, icicle);
     }
-    
+
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
         injectActivity(activity);
         mBase.callActivityOnCreate(activity, icicle, persistentState);
     }
-    
+
     protected void injectActivity(Activity activity) {
         final Intent intent = activity.getIntent();
         if (PluginUtil.isIntentFromPlugin(intent)) {
@@ -179,13 +180,13 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
                 if (activityInfo.screenOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) {
                     activity.setRequestedOrientation(activityInfo.screenOrientation);
                 }
-    
+
                 // for native activity
                 ComponentName component = PluginUtil.getComponent(intent);
                 Intent wrapperIntent = new Intent(intent);
                 wrapperIntent.setClassName(component.getPackageName(), component.getClassName());
                 activity.setIntent(wrapperIntent);
-                
+
             } catch (Exception e) {
                 Log.w(TAG, e);
             }
@@ -208,6 +209,30 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
                     if (theme != 0) {
                         Log.i(TAG, "resolve theme, current theme:" + activityInfo.theme + "  after :0x" + Integer.toHexString(theme));
                         activityInfo.theme = theme;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, e);
+            }
+        }else if (msg.what == EXECUTE_TRANSACTION) {
+            try {
+                Object obj = msg.obj;
+                Reflector reflector = Reflector.with(obj);
+                List<Object> mActivityCallbacks = reflector.field("mActivityCallbacks").get();
+                if (mActivityCallbacks.size() > 0) {
+                    String className = "android.app.servertransaction.LaunchActivityItem";
+                    if (mActivityCallbacks.get(0).getClass().getCanonicalName().equals(className)) {
+                        Object object = mActivityCallbacks.get(0);
+                        reflector = Reflector.with(object);
+                        Intent intent = reflector.field("mIntent").get();
+                        ActivityInfo activityInfo = reflector.field("mInfo").get();
+                        if (PluginUtil.isIntentFromPlugin(intent)) {
+                            int theme = PluginUtil.getTheme(mPluginManager.getHostContext(), intent);
+                            if (theme != 0) {
+                                Log.i(TAG, "resolve theme, current theme:" + activityInfo.theme + "  after :0x" + Integer.toHexString(theme));
+                                activityInfo.theme = theme;
+                            }
+                        }
                     }
                 }
             } catch (Exception e) {
