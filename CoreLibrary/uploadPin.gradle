@@ -1,0 +1,22 @@
+apply plugin: 'maven'
+
+def GROUP_ID = 'com.pin.virtualapk'
+def ARTIFACT_ID = 'core'
+def VERSION = '0.9.8'
+
+Properties properties = new Properties()
+properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
+//上传到nexus
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: properties.getProperty("NEXUS_URL")) {
+                authentication(userName: properties.getProperty("NEXUS_USERNAME"), password: properties.getProperty("NEXUS_PASSWORD"))
+            }
+            pom.groupId = "${GROUP_ID}"
+            pom.artifactId = "${ARTIFACT_ID}"
+            pom.version = "${VERSION}"
+        }
+    }
+}
