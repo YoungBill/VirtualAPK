@@ -2,7 +2,7 @@ apply plugin: 'maven'
 
 def GROUP_ID = 'com.pin.virtualapk'
 def ARTIFACT_ID = 'core'
-def VERSION = '0.9.8'
+def VERSION = '0.9.8.1'
 
 Properties properties = new Properties()
 properties.load(project.rootProject.file('local.properties').newDataInputStream())
